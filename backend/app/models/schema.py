@@ -141,7 +141,7 @@ class Market(Base):
     __tablename__ = "markets"
     
     id = Column(Integer, primary_key=True, index=True)
-    sector = Column(String(50), nullable=False, unique=True)
+    sector = Column(String(50), nullable=False)
     price_index = Column(Float, nullable=False, default=100.0)  # Индекс цен
     supply = Column(Float, nullable=False, default=0.0)
     demand = Column(Float, nullable=False, default=0.0)
