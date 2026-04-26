@@ -330,16 +330,15 @@ export default function Dashboard() {
   const [events, setEvents] = useState<EventInfo[]>([])
   const [markets, setMarkets] = useState<MarketInfo[]>([])
   const [wealth, setWealth] = useState<{ buckets: WealthBucket[]; total_agents: number; total_capital: number } | null>(null)
-  const [timeRange, setTimeRange] = useState<number>(200)
+  const [timeRange, setTimeRange] = useState<number>(0)  // 0 = auto/aggregated
   const [detailModal, setDetailModal] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const refresh = useCallback(async () => {
     try {
-      const [s, m, top, bot, ev, mk, w] = await Promise.all([
+      const [s, top, bot, ev, mk, w] = await Promise.all([
         fetchAPI<SimStatus>('/status'),
-        fetchAPI<Macro[]>(`/macro?limit=${timeRange}`),
         fetchAPI<AgentInfo[]>('/agents?sort=capital&order=desc&limit=10'),
         fetchAPI<AgentInfo[]>('/agents?sort=capital&order=asc&limit=10'),
         fetchAPI<EventInfo[]>('/events?limit=20'),
@@ -347,12 +346,22 @@ export default function Dashboard() {
         fetchAPI<any>('/wealth-distribution'),
       ])
       setStatus(s)
-      setMacro(m)
       setTopAgents(top)
       setBottomAgents(bot)
       setEvents(ev)
       setMarkets(mk)
       setWealth(w)
+
+      // Macro data — aggregated or raw
+      if (timeRange === 0) {
+        // "All" — aggregated
+        const m = await fetchAPI<Macro[]>('/macro/history')
+        setMacro(m)
+      } else {
+        const m = await fetchAPI<Macro[]>(`/macro?limit=${timeRange}`)
+        setMacro(m)
+      }
+
       setLoading(false)
       setError(null)
     } catch (e: any) {
@@ -483,7 +492,7 @@ export default function Dashboard() {
                 { label: t.last6h, ticks: 360 },
                 { label: t.last24h, ticks: 1440 },
                 { label: t.last7d, ticks: 10080 },
-                { label: t.all, ticks: 99999 },
+                { label: t.all, ticks: 0 },
               ].map(opt => (
                 <button key={opt.ticks} onClick={() => setTimeRange(opt.ticks)}
                   className={`px-2.5 py-1 text-[10px] rounded-lg border transition-all ${timeRange === opt.ticks ? 'border-accent text-accent bg-accent/10' : 'border-[#1e1e2e] text-gray-500 hover:border-[#2e2e4e]'}`}>

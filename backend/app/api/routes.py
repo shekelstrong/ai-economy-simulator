@@ -137,6 +137,108 @@ async def get_macro_history(
     return list(reversed(result.scalars().all()))
 
 
+@router.get("/macro/history")
+async def get_macro_history_aggregated(
+    resolution: str = Query("auto", regex="^(auto|tick|minute|hour|day)$"),
+    session: AsyncSession = Depends(get_session),
+):
+    """Агрегированная история макро-показателей.
+    
+    resolution:
+      - auto: автоматически выбрать батчинг (default)
+      - tick: каждый тик (макс 500 последних)
+      - minute: усреднение по минутам
+      - hour: усреднение по часам
+      - day: усреднение по дням
+    """
+    # Считаем общее число тиков
+    total_result = await session.execute(select(func.count(MacroIndicator.id)))
+    total_ticks = total_result.scalar() or 0
+    
+    # Если данных мало — отдаём как есть
+    if total_ticks <= 500 or resolution == "tick":
+        result = await session.execute(
+            select(MacroIndicator).order_by(desc(MacroIndicator.tick)).limit(500)
+        )
+        return list(reversed(result.scalars().all()))
+    
+    # Определяем размер батча
+    # TICK_INTERVAL_SECONDS = 60 → 1 тик/мин, 60 тиков/час, 1440 тиков/день
+    if resolution == "auto":
+        if total_ticks <= 500:
+            batch_size = 1
+        elif total_ticks <= 3000:  # ~2 дня → по 5 тиков
+            batch_size = 5
+        elif total_ticks <= 15000:  # ~10 дней → по минутам
+            batch_size = 10
+        elif total_ticks <= 100000:  # ~70 дней → по часам
+            batch_size = 60
+        else:  # >70 дней → по 4 часа
+            batch_size = 240
+    elif resolution == "minute":
+        batch_size = 1
+    elif resolution == "hour":
+        batch_size = 60
+    elif resolution == "day":
+        batch_size = 1440
+    else:
+        batch_size = 1
+    
+    if batch_size <= 1:
+        result = await session.execute(
+            select(MacroIndicator).order_by(desc(MacroIndicator.tick)).limit(500)
+        )
+        return list(reversed(result.scalars().all()))
+    
+    # SQL агрегация — группируем по батчам
+    batch_label = (MacroIndicator.tick / batch_size).label("batch")
+    
+    from sqlalchemy import cast, Integer, case
+    
+    stmt = select(
+        (func.min(MacroIndicator.tick)).label("tick"),
+        (func.avg(MacroIndicator.gdp)).label("gdp"),
+        (func.avg(MacroIndicator.total_capital)).label("total_capital"),
+        (func.avg(MacroIndicator.avg_income)).label("avg_income"),
+        (func.avg(MacroIndicator.gini_coefficient)).label("gini_coefficient"),
+        (func.avg(MacroIndicator.unemployment_rate)).label("unemployment_rate"),
+        (func.avg(MacroIndicator.inflation_rate)).label("inflation_rate"),
+        (func.sum(MacroIndicator.total_transactions)).label("total_transactions"),
+        (func.avg(MacroIndicator.active_companies)).label("active_companies"),
+        (func.sum(MacroIndicator.bankruptcies)).label("bankruptcies"),
+        (func.avg(MacroIndicator.wealth_p10)).label("wealth_p10"),
+        (func.avg(MacroIndicator.wealth_p25)).label("wealth_p25"),
+        (func.avg(MacroIndicator.wealth_p50)).label("wealth_p50"),
+        (func.avg(MacroIndicator.wealth_p75)).label("wealth_p75"),
+        (func.avg(MacroIndicator.wealth_p90)).label("wealth_p90"),
+    ).group_by(batch_label).order_by(batch_label)
+    
+    result = await session.execute(stmt)
+    rows = result.all()
+    
+    # Конвертируем в словари
+    return [
+        {
+            "tick": r.tick,
+            "gdp": float(r.gdp) if r.gdp else 0,
+            "total_capital": float(r.total_capital) if r.total_capital else 0,
+            "avg_income": float(r.avg_income) if r.avg_income else 0,
+            "gini_coefficient": float(r.gini_coefficient) if r.gini_coefficient else 0,
+            "unemployment_rate": float(r.unemployment_rate) if r.unemployment_rate else 0,
+            "inflation_rate": float(r.inflation_rate) if r.inflation_rate else 0,
+            "total_transactions": int(r.total_transactions) if r.total_transactions else 0,
+            "active_companies": int(r.active_companies) if r.active_companies else 0,
+            "bankruptcies": int(r.bankruptcies) if r.bankruptcies else 0,
+            "wealth_p10": float(r.wealth_p10) if r.wealth_p10 else None,
+            "wealth_p25": float(r.wealth_p25) if r.wealth_p25 else None,
+            "wealth_p50": float(r.wealth_p50) if r.wealth_p50 else None,
+            "wealth_p75": float(r.wealth_p75) if r.wealth_p75 else None,
+            "wealth_p90": float(r.wealth_p90) if r.wealth_p90 else None,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/agents", response_model=List[AgentBrief])
 async def get_agents(
     role: Optional[str] = None,
