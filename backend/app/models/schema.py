@@ -126,7 +126,7 @@ class Transaction(Base):
     amount = Column(Float, nullable=False)
     description = Column(Text, nullable=True)
     
-    tick = Column(Integer, nullable=False)  # Номер тика симуляции
+    tick = Column(Integer, nullable=False, index=True)  # Номер тика симуляции
     created_at = Column(DateTime, server_default=func.now())
     
     from_agent = relationship("Agent", foreign_keys=[from_agent_id], back_populates="transactions_sent")

@@ -2,7 +2,7 @@
 
 import asyncio
 import random
-import json
+import math
 from datetime import datetime
 from typing import List, Dict, Any, Optional
 from loguru import logger
@@ -119,6 +119,7 @@ class SimulationEngine:
             
             # 3. Исполнить транзакции
             await self._execute_transactions(session, decisions)
+            self._txn_count_this_tick = len(decisions)
             
             # 4. Зарплаты и налоги
             await self._process_salaries_taxes(session)
@@ -272,61 +273,91 @@ class SimulationEngine:
         return None
     
     async def _execute_transactions(self, session: AsyncSession, transactions: List[Dict]):
-        """Исполнить транзакции и обновить балансы."""
+        """Исполнить транзакции батчем — один запрос к БД вместо N+1."""
+        if not transactions:
+            return
+        
+        # 1. Собрать все ID агентов
+        agent_ids = set()
+        for txn in transactions:
+            if txn.get("from") is not None:
+                agent_ids.add(txn["from"])
+            if txn.get("to") is not None:
+                agent_ids.add(txn["to"])
+        
+        if not agent_ids:
+            # Только системные транзакции без агентов — просто записать
+            for txn in transactions:
+                session.add(Transaction(
+                    type=txn["type"],
+                    from_agent_id=None,
+                    to_agent_id=None,
+                    amount=txn["amount"],
+                    description=txn.get("description", ""),
+                    tick=self.current_tick,
+                ))
+            return
+        
+        # 2. Загрузить всех нужных агентов ОДНИМ запросом
+        result = await session.execute(
+            select(Agent).where(Agent.id.in_(agent_ids))
+        )
+        agents_map: Dict[int, Agent] = {a.id: a for a in result.scalars().all()}
+        
+        # 3. Обновить балансы в памяти
+        records = []
         for txn in transactions:
             amount = txn["amount"]
+            from_id = txn.get("from")
+            to_id = txn.get("to")
             
-            # Обновляем баланс отправителя
-            if txn["from"] is not None:
-                result = await session.execute(
-                    select(Agent).where(Agent.id == txn["from"]).with_for_update()
-                )
-                from_agent = result.scalar_one_or_none()
-                if from_agent and from_agent.capital >= amount:
-                    from_agent.capital -= amount
-                    from_agent.expenses += amount
-                else:
+            # Проверяем отправителя
+            if from_id is not None:
+                from_agent = agents_map.get(from_id)
+                if not from_agent or from_agent.capital < amount:
                     continue  # Не хватает денег
+                from_agent.capital -= amount
+                from_agent.expenses += amount
             
-            # Обновляем баланс получателя
-            if txn["to"] is not None:
-                result = await session.execute(
-                    select(Agent).where(Agent.id == txn["to"]).with_for_update()
-                )
-                to_agent = result.scalar_one_or_none()
+            # Начисляем получателю
+            if to_id is not None:
+                to_agent = agents_map.get(to_id)
                 if to_agent:
                     to_agent.capital += amount
                     to_agent.income += amount
             
             # Записываем транзакцию
-            record = Transaction(
+            records.append(Transaction(
                 type=txn["type"],
-                from_agent_id=txn.get("from"),
-                to_agent_id=txn.get("to"),
+                from_agent_id=from_id,
+                to_agent_id=to_id,
                 amount=amount,
                 description=txn.get("description", ""),
                 tick=self.current_tick,
-            )
-            session.add(record)
+            ))
+        
+        # 4. Добавить все записи батчем
+        session.add_all(records)
     
     async def _process_salaries_taxes(self, session: AsyncSession):
-        """Обработать зарплаты и налоги."""
-        result = await session.execute(
-            select(Agent).where(Agent.status == "active")
+        """Обработать налоги и инфляцию — батч-обновление."""
+        # Налог на доход — одним UPDATE запросом
+        await session.execute(
+            update(Agent)
+            .where(Agent.status == "active", Agent.income > 0)
+            .values(capital=Agent.capital - (Agent.income * settings.TAX_RATE))
         )
-        agents = result.scalars().all()
         
-        for agent in agents:
-            # Налог
-            if agent.income > 0:
-                tax = agent.income * settings.TAX_RATE
-                agent.capital -= tax
-            
-            # Инфляция съедает часть капитала
-            agent.capital *= (1 - settings.INFLATION_RATE)
-            
-            # Обновляем счётчик решений
-            agent.decisions_count += 1
+        # Инфляция — одним UPDATE запросом
+        inflation_factor = 1 - settings.INFLATION_RATE
+        await session.execute(
+            update(Agent)
+            .where(Agent.status == "active")
+            .values(
+                capital=Agent.capital * inflation_factor,
+                decisions_count=Agent.decisions_count + 1,
+            )
+        )
     
     async def _check_bankruptcies(self, session: AsyncSession) -> int:
         """Проверить и обработать банкротства."""
@@ -388,54 +419,48 @@ class SimulationEngine:
         return events
     
     async def _record_macro(self, session: AsyncSession):
-        """Записать макроэкономические показатели."""
+        """Записать макроэкономические показатели — оптимизировано."""
+        # Один запрос — только capital, не грузим всех агентов целиком
         result = await session.execute(
-            select(Agent).where(Agent.status == "active")
+            select(Agent.capital).where(Agent.status == "active").order_by(Agent.capital)
         )
-        agents = result.scalars().all()
+        capitals = [r[0] for r in result.all()]
         
-        if not agents:
+        if not capitals:
             return
         
-        capitals = sorted([a.capital for a in agents])
-        total_capital = sum(capitals)
         n = len(capitals)
+        total_capital = sum(capitals)
         
         def percentile(arr, p):
             idx = int(len(arr) * p / 100)
             return arr[min(idx, len(arr) - 1)]
         
-        # Gini coefficient
-        gini = 0
-        if total_capital > 0:
-            for c in capitals:
-                gini += abs(c * n - total_capital)
-            gini = gini / (2 * n * total_capital) if total_capital > 0 else 0
+        # Gini — O(n log n) формула (сортированный массив)
+        gini = 0.0
+        if total_capital > 0 and n > 0:
+            # Формула: G = (2 * Σ(i * xi)) / (n * Σ(xi)) - (n+1)/n
+            cumsum = 0.0
+            for i, c in enumerate(capitals, 1):
+                cumsum += i * c
+            gini = (2.0 * cumsum) / (n * total_capital) - (n + 1.0) / n
+            gini = max(0.0, min(1.0, gini))  # Clamp
         
-        # Bankruptcies this tick
-        bankrupt_count = await session.execute(
-            select(func.count(Agent.id)).where(Agent.status == "bankrupt")
-        )
-        
-        # Active companies
-        company_count = await session.execute(
-            select(func.count(Company.id)).where(Company.is_active == True)
-        )
-        
-        # Transactions this tick
-        txn_count = await session.execute(
-            select(func.count(Transaction.id)).where(Transaction.tick == self.current_tick)
+        # Параллельные COUNT запросы
+        bankrupt_count, company_count = await asyncio.gather(
+            session.execute(select(func.count(Agent.id)).where(Agent.status == "bankrupt")),
+            session.execute(select(func.count(Company.id)).where(Company.is_active == True)),
         )
         
         indicator = MacroIndicator(
             tick=self.current_tick,
             gdp=total_capital,
             total_capital=total_capital,
-            avg_income=total_capital / n if n > 0 else 0,
+            avg_income=total_capital / n,
             gini_coefficient=gini,
-            unemployment_rate=0.0,  # TODO: считать по ролям
+            unemployment_rate=0.0,
             inflation_rate=settings.INFLATION_RATE * 100,
-            total_transactions=txn_count.scalar() or 0,
+            total_transactions=self._txn_count_this_tick,  # Из кэша
             active_companies=company_count.scalar() or 0,
             bankruptcies=bankrupt_count.scalar() or 0,
             wealth_p10=percentile(capitals, 10),
