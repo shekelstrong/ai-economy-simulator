@@ -99,6 +99,16 @@ const translations: Record<string, Record<string, string>> = {
     innovation: 'Innovation', crisis: 'Crisis', bankruptcy: 'Bankruptcy', trade: 'Trade',
     priceIndex: 'Price Index', share: 'Share', count: 'Count',
     p10: 'P10 (Poorest 10%)', p25: 'P25', p50: 'P50 (Median)', p75: 'P75', p90: 'P90 (Richest 10%)',
+    bucketDesc_0_10: 'Poorest — bottom 10% of population',
+    bucketDesc_10_20: 'Lower middle class',
+    bucketDesc_20_30: 'Middle class (lower)',
+    bucketDesc_30_40: 'Middle class',
+    bucketDesc_40_50: 'Middle class (upper)',
+    bucketDesc_50_60: 'Above average',
+    bucketDesc_60_70: 'Upper middle class',
+    bucketDesc_70_80: 'Well-off',
+    bucketDesc_80_90: 'Rich',
+    bucketDesc_90_100: 'Richest — top 10% of population',
   },
   zh: {
     title: 'AI经济模拟器',
@@ -143,6 +153,16 @@ const translations: Record<string, Record<string, string>> = {
     innovation: '创新', crisis: '危机', bankruptcy: '破产', trade: '贸易',
     priceIndex: '价格指数', share: '占比', count: '数量',
     p10: 'P10（最穷10%）', p25: 'P25', p50: 'P50（中位数）', p75: 'P75', p90: 'P90（最富10%）',
+    bucketDesc_0_10: '最穷 — 底部10%人口',
+    bucketDesc_10_20: '中下阶层',
+    bucketDesc_20_30: '中产阶级（下部）',
+    bucketDesc_30_40: '中产阶级',
+    bucketDesc_40_50: '中产阶级（上部）',
+    bucketDesc_50_60: '高于平均水平',
+    bucketDesc_60_70: '中上阶层',
+    bucketDesc_70_80: '富裕',
+    bucketDesc_80_90: '富有',
+    bucketDesc_90_100: '最富 — 顶部10%人口',
   },
   ar: {
     title: 'محاكي الاقتصاد بالذكاء الاصطناعي',
@@ -187,6 +207,16 @@ const translations: Record<string, Record<string, string>> = {
     innovation: 'ابتكار', crisis: 'أزمة', bankruptcy: 'إفلاس', trade: 'تجارة',
     priceIndex: 'مؤشر السعر', share: 'الحصة', count: 'العدد',
     p10: 'P10 (أفقر 10%)', p25: 'P25', p50: 'P50 (الوسيط)', p75: 'P75', p90: 'P90 (أغنى 10%)',
+    bucketDesc_0_10: 'الأفقر — أقل 10% من السكان',
+    bucketDesc_10_20: 'الطبقة الوسطى الدنيا',
+    bucketDesc_20_30: 'الطبقة الوسطى (الجزء السفلي)',
+    bucketDesc_30_40: 'الطبقة الوسطى',
+    bucketDesc_40_50: 'الطبقة الوسطى (الجزء العلوي)',
+    bucketDesc_50_60: 'فوق المتوسط',
+    bucketDesc_60_70: 'الطبقة الوسطى العليا',
+    bucketDesc_70_80: 'الميسورون',
+    bucketDesc_80_90: 'الأغنياء',
+    bucketDesc_90_100: 'الأغنى — أعلى 10% من السكان',
   },
   ru: {
     title: 'ИИ-Симулятор Экономики',
@@ -231,6 +261,16 @@ const translations: Record<string, Record<string, string>> = {
     innovation: 'Инновация', crisis: 'Кризис', bankruptcy: 'Банкротство', trade: 'Сделка',
     priceIndex: 'Индекс цен', share: 'Доля', count: 'Кол-во',
     p10: 'P10 (беднейшие 10%)', p25: 'P25', p50: 'P50 (медиана)', p75: 'P75', p90: 'P90 (богатейшие 10%)',
+    bucketDesc_0_10: 'Самые бедные — нижние 10% населения',
+    bucketDesc_10_20: 'Нижний средний класс',
+    bucketDesc_20_30: 'Средний класс (нижняя часть)',
+    bucketDesc_30_40: 'Средний класс',
+    bucketDesc_40_50: 'Средний класс (верхняя часть)',
+    bucketDesc_50_60: 'Выше среднего',
+    bucketDesc_60_70: 'Верхний средний класс',
+    bucketDesc_70_80: 'Обеспеченные',
+    bucketDesc_80_90: 'Богатые',
+    bucketDesc_90_100: 'Самые богатые — верхние 10% населения',
   },
 }
 
@@ -266,9 +306,9 @@ function InfoTip({ text }: { text: string }) {
         <HelpCircle className="w-3.5 h-3.5" />
       </button>
       {show && (
-        <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 text-xs leading-relaxed bg-[#1a1a2e] border border-[#2e2e4e] rounded-lg shadow-xl whitespace-normal w-56 text-gray-300 pointer-events-none">
+        <span className="absolute z-50 top-full left-0 mt-2 px-3 py-2 text-[11px] leading-relaxed bg-[#1a1a2e] border border-[#2e2e4e] rounded-lg shadow-xl w-72 text-gray-300 pointer-events-none">
           {text}
-          <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-[#1a1a2e]" />
+          <span className="absolute bottom-full left-3 border-4 border-transparent border-b-[#1a1a2e]" />
         </span>
       )}
     </span>
@@ -507,16 +547,25 @@ export default function Dashboard() {
                 </h3>
                 {wealth && wealth.buckets.length > 0 ? (
                   <div className="space-y-1.5">
-                    {wealth.buckets.map((b, i) => (
+                    {wealth.buckets.map((b, i) => {
+                      const bucketKey = `bucketDesc_${b.range.replace('-', '_').replace('%', '')}`
+                      // Parse range like "0-10%" → "bucketDesc_0_10"
+                      const rangeParts = b.range.replace('%', '').split('-')
+                      const descKey = `bucketDesc_${rangeParts[0]}_${rangeParts[1]}`
+                      const desc = (t as any)[descKey] || ''
+                      return (
                       <div key={i} 
-                        className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[#1a1a2e] cursor-pointer transition-all"
+                        className="group flex items-center gap-2 py-2 px-3 rounded-lg hover:bg-[#1a1a2e] cursor-pointer transition-all"
                         onClick={() => setDetailModal(`${t.wealthDistribution}: ${b.range}`)}
                       >
                         {/* Цветной индикатор */}
                         <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
                         
-                        {/* Диапазон */}
-                        <span className="text-xs text-gray-400 w-16 flex-shrink-0">{b.range}</span>
+                        {/* Диапазон + описание */}
+                        <div className="w-28 flex-shrink-0">
+                          <div className="text-xs text-white font-medium">{b.range}</div>
+                          {desc && <div className="text-[10px] text-gray-500">{desc}</div>}
+                        </div>
                         
                         {/* Полоска прогресса */}
                         <div className="flex-1 h-5 bg-[#0a0a0f] rounded overflow-hidden relative">
@@ -535,7 +584,8 @@ export default function Dashboard() {
                           <div className="text-[10px] text-gray-400">₽{fmt(b.avg_capital)}</div>
                         </div>
                       </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 ) : (
                   <div className="h-[260px] flex items-center justify-center text-gray-500 text-sm">{t.noData}</div>
