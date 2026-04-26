@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     AGENT_PERSONALITY_TRAITS: int = 5  # Число черт характера (риск, жадность и т.д.)
     
     # === AI ===
-    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_API_KEY: str = ""  # Из .env
     
     # Модели для разных задач
     AI_MODEL_SIMPLE: str = "openrouter/sherlock-dash-alpha"  # Быстрые решения
