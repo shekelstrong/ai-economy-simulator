@@ -306,8 +306,8 @@ function InfoTip({ text }: { text: string }) {
         <HelpCircle className="w-3.5 h-3.5" />
       </button>
       {show && (
-        <div className="fixed inset-0 z-[9999]" onClick={() => setShow(false)} onMouseEnter={() => setShow(false)}>
-          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 px-4 py-3 text-[12px] leading-relaxed bg-[#1a1a2e] border border-[#2e2e4e] rounded-xl shadow-2xl max-w-sm text-gray-300 text-center">
+        <div className="fixed inset-0 z-[9999]" onClick={() => setShow(false)}>
+          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 text-[13px] leading-relaxed bg-[#1e2040] border border-blue-500/30 rounded-xl shadow-2xl max-w-sm text-gray-200 text-center z-[10000]">
             {text}
           </div>
         </div>

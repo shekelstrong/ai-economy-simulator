@@ -10,21 +10,21 @@ from loguru import logger
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Модели для разных задач
+# Модели для разных задач (реально существующие на OpenRouter)
 MODELS = {
-    "quick": "openrouter/sherlock-dash-alpha",       # Быстрые решения
-    "trade": "deepseek/deepseek-v4-flash",            # Торговля
-    "strategy": "x-ai/grok-4.1-fast",                 # Стратегия
-    "research": "openrouter/hunter-alpha",             # Исследования
-    "reasoning": "openrouter/sherlock-think-alpha",    # Сложные решения
+    "quick": "nvidia/nemotron-3-nano-30b-a3b:free",       # Быстрые решения (free)
+    "trade": "deepseek/deepseek-v4-flash",              # Торговля
+    "strategy": "x-ai/grok-4.1-fast",                   # Стратегия
+    "research": "deepseek/deepseek-v4-flash",           # Исследования
+    "reasoning": "deepseek/deepseek-v4-flash",          # Сложные решения
 }
 
 # Fallback free models
 FALLBACK_MODELS = {
-    "quick": "nvidia/nemotron-3-nano-30b-a3b:free",
-    "trade": "deepseek/deepseek-v4-flash",
+    "quick": "deepseek/deepseek-v4-flash",
+    "trade": "nvidia/nemotron-3-nano-30b-a3b:free",
     "strategy": "deepseek/deepseek-v4-flash",
-    "research": "openrouter/hunter-alpha",
+    "research": "nvidia/nemotron-3-nano-30b-a3b:free",
     "reasoning": "deepseek/deepseek-v4-flash",
 }
 
@@ -135,7 +135,12 @@ Make your decision now. Respond with ONLY valid JSON."""
                     return None
             
             data = resp.json()
-            content = data["choices"][0]["message"]["content"].strip()
+            content = data.get("choices", [{}])[0].get("message", {}).get("content")
+            
+            if not content or not isinstance(content, str):
+                return None
+            
+            content = content.strip()
             
             # Parse JSON from response
             # Handle cases where LLM adds ```json wrapper
