@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg: #0a0a0f;
+  --card: #12121a;
+  --accent: #3b82f6;
+}
+
+body {
+  background: var(--bg);
+  color: #e2e8f0;
+  font-family: 'Inter', -apple-system, sans-serif;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #0a0a0f; }
+::-webkit-scrollbar-thumb { background: #1e1e2e; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2e2e4e; }
+
+.card {
+  @apply bg-[#12121a] border border-[#1e1e2e] rounded-xl p-4 hover:border-[#2e2e4e] transition-all;
+}
+
+.metric-value {
+  @apply text-2xl font-bold tracking-tight;
+}
+
+.sparkline-container {
+  @apply h-8 flex items-end gap-[2px];
+}
+
+.pulse-dot {
+  @apply w-2 h-2 rounded-full bg-green-500 animate-pulse;
+}
+
+.lang-btn {
+  @apply px-3 py-1 text-xs rounded-lg border border-[#1e1e2e] hover:border-accent hover:text-accent transition-all;
+}
+.lang-btn.active {
+  @apply bg-accent text-white border-accent;
+}
