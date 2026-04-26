@@ -18,7 +18,11 @@ import {
 // ============================================================
 const getAPIBase = () => {
   if (typeof window !== 'undefined') {
-    // В браузере — использовать текущий хост
+    // Если за nginx прокси (/economy/), используем /economy-api/
+    if (window.location.pathname.startsWith('/economy')) {
+      return `${window.location.origin}/economy-api`
+    }
+    // Прямой доступ — порты
     return `${window.location.protocol}//${window.location.hostname}:8010/api`
   }
   return 'http://localhost:8010/api'
