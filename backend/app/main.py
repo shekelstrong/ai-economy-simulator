@@ -7,13 +7,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 from app.core.config import settings
-from app.core.database import engine as db_engine, get_session, Base
+from app.core.database import engine as db_engine, async_session, Base
 from app.api.routes import router, ws_manager
 from app.engine.simulation import SimulationEngine
 
 
 # Глобальный движок
-engine = SimulationEngine(get_session)
+engine = SimulationEngine(async_session)
 
 
 @asynccontextmanager
