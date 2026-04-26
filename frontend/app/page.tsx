@@ -306,10 +306,11 @@ function InfoTip({ text }: { text: string }) {
         <HelpCircle className="w-3.5 h-3.5" />
       </button>
       {show && (
-        <span className="absolute z-50 top-full left-0 mt-2 px-3 py-2 text-[11px] leading-relaxed bg-[#1a1a2e] border border-[#2e2e4e] rounded-lg shadow-xl w-72 text-gray-300 pointer-events-none">
-          {text}
-          <span className="absolute bottom-full left-3 border-4 border-transparent border-b-[#1a1a2e]" />
-        </span>
+        <div className="fixed inset-0 z-[9999]" onClick={() => setShow(false)} onMouseEnter={() => setShow(false)}>
+          <div className="fixed bottom-4 left-1/2 -translate-x-1/2 px-4 py-3 text-[12px] leading-relaxed bg-[#1a1a2e] border border-[#2e2e4e] rounded-xl shadow-2xl max-w-sm text-gray-300 text-center">
+            {text}
+          </div>
+        </div>
       )}
     </span>
   )
@@ -370,11 +371,13 @@ export default function Dashboard() {
     }
   }, [timeRange])
 
-  useEffect(() => { refresh() }, [refresh])
+  // Один useEffect: initial fetch + polling каждые 5 секунд
   useEffect(() => {
-    const iv = setInterval(refresh, 3000)
+    refresh()
+    const iv = setInterval(refresh, 5000)
     return () => clearInterval(iv)
-  }, [refresh])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeRange])
 
   const latest = macro.length > 0 ? macro[macro.length - 1] : null
   const prev = macro.length > 1 ? macro[macro.length - 2] : null
@@ -467,7 +470,7 @@ export default function Dashboard() {
                 { label: t.inflation, value: latest?.inflation_rate != null ? `${latest.inflation_rate.toFixed(2)}%` : null, icon: Percent, color: 'text-orange-400', tip: t.tooltip_inflation },
                 { label: t.transactions, value: latest?.total_transactions, icon: Zap, color: 'text-cyan-400', tip: t.tooltip_transactions },
                 { label: t.txPerTick, value: txPerTick, icon: Activity, color: 'text-indigo-400', tip: t.tooltip_txPerTick },
-                { label: t.wealthGap, value: wealthGap?.toFixed(1) + 'x', icon: TrendingUp, color: 'text-pink-400', tip: t.tooltip_wealthGap },
+                { label: t.wealthGap, value: wealthGap ? wealthGap.toFixed(1) + 'x' : '—', icon: TrendingUp, color: 'text-pink-400', tip: t.tooltip_wealthGap },
               ].map((card, i) => (
                 <div key={i} className="card cursor-pointer group !p-3" onClick={() => setDetailModal(card.label)}>
                   <div className="flex items-center justify-between mb-1.5">
