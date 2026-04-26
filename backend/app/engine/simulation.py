@@ -295,7 +295,11 @@ class SimulationEngine:
             if bank.capital > 50000 and random.random() < 0.3:
                 loan_amount = bank.capital * 0.15
                 # Кредит random агенту
-                borrower = random.choice([a for a in agents if a.role in ("entrepreneur", "worker") and a.capital < 50000])
+                borrowers = [a for a in agents if a.role in ("entrepreneur", "worker") and a.capital < 50000]
+                if borrowers:
+                    borrower = random.choice(borrowers)
+                else:
+                    borrower = None
                 if borrower:
                     rate = random.uniform(0.05, 0.15)  # 5-15% годовых
                     transactions.append({
