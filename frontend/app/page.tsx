@@ -18,11 +18,11 @@ import {
 // ============================================================
 const getAPIBase = () => {
   if (typeof window !== 'undefined') {
-    // Если за nginx прокси (/economy/), используем /economy-api/
-    if (window.location.pathname.startsWith('/economy')) {
-      return `${window.location.origin}/economy-api`
+    // Если на hexus.sbs — API через nginx /api/
+    if (window.location.hostname !== 'localhost' && window.location.port === '') {
+      return `${window.location.origin}/api`
     }
-    // Прямой доступ — порты
+    // Прямой доступ — порт 8010
     return `${window.location.protocol}//${window.location.hostname}:8010/api`
   }
   return 'http://localhost:8010/api'
