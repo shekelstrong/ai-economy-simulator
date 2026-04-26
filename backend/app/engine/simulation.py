@@ -21,7 +21,8 @@ class SimulationEngine:
         self.session_factory = session_factory
         self.current_tick = 0
         self.is_running = False
-        self._ai_budget_remaining = 0  # AI-запросы оставшиеся в тике
+        self._ai_budget_remaining = 0
+        self._txn_count_this_tick = 0
     
     async def initialize(self) -> int:
         """Инициализация: создать агентов и начальные рынки. Возвращает начальный тик."""
