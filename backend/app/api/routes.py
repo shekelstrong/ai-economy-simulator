@@ -104,9 +104,9 @@ class SimulationStatus(BaseModel):
 # ============================================================================
 
 @router.get("/status", response_model=SimulationStatus)
-async def get_status(session: AsyncSession = Depends(get_session)):
+async def get_status(request, session: AsyncSession = Depends(get_session)):
     """Текущий статус симуляции."""
-    from app.engine.simulation import engine
+    from app.main import engine
     
     total = await session.execute(select(func.count(Agent.id)))
     active = await session.execute(select(func.count(Agent.id)).where(Agent.status == "active"))
