@@ -137,41 +137,47 @@ class SimulationEngine:
             await self._record_macro(session)
             
             await session.commit()
+        
+        # 8. Telegram уведомления (вне сессии, fire-and-forget)
+        try:
+            import asyncio
+            from app.engine.telegram_notifier import send_tick_report, send_crisis_alert, send_bankruptcy_milestone
             
-            # 8. Telegram уведомления
-            try:
-                from app.engine.telegram_notifier import send_tick_report, send_crisis_alert, send_bankruptcy_milestone
-                
-                # Сводка каждые 5 тиков
-                status_data = {
-                    "active_agents": await session.scalar(select(func.count(Agent.id)).where(Agent.status == "active")),
-                    "bankrupt_agents": await session.scalar(select(func.count(Agent.id)).where(Agent.status == "bankrupt")),
-                    "transactions": tick_summary["transactions"],
-                    "events": tick_summary["events"],
-                }
-                
-                # Последний макро-показатель
-                macro_result = await session.execute(
-                    select(MacroIndicator).where(MacroIndicator.tick == self.current_tick)
-                )
-                macro_data = macro_result.scalar_one_or_none()
-                
-                if macro_data:
-                    await send_tick_report(self.current_tick, status_data, {
-                        "gdp": macro_data.gdp,
-                        "gini_coefficient": macro_data.gini_coefficient,
-                    })
-                
-                # Алерты на банкротства
-                if status_data["bankrupt_agents"]:
-                    await send_bankruptcy_milestone(status_data["bankrupt_agents"], self.current_tick)
-                
-                # Алерты на кризисы
-                for ev in events:
-                    if ev == "crisis":
-                        await send_crisis_alert({"severity": "critical", "title": "Экономический кризис!", "description": f"Тик {self.current_tick}"})
-            except Exception as e:
-                logger.debug(f"Telegram notify error: {e}
+            # Простой подсчёт — не блокируем
+            async def _notify():
+                try:
+                    async with self.session_factory() as ns:
+                        active = await ns.scalar(select(func.count(Agent.id)).where(Agent.status == "active"))
+                        bankrupt = await ns.scalar(select(func.count(Agent.id)).where(Agent.status == "bankrupt"))
+                        macro_result = await ns.execute(
+                            select(MacroIndicator).where(MacroIndicator.tick == self.current_tick)
+                        )
+                        macro_data = macro_result.scalar_one_or_none()
+                    
+                    if macro_data:
+                        await send_tick_report(self.current_tick, {
+                            "active_agents": active,
+                            "bankrupt_agents": bankrupt,
+                            "transactions": tick_summary["transactions"],
+                            "events": tick_summary["events"],
+                        }, {
+                            "gdp": macro_data.gdp,
+                            "gini_coefficient": macro_data.gini_coefficient,
+                        })
+                    
+                    if bankrupt and bankrupt > 0:
+                        await send_bankruptcy_milestone(bankrupt, self.current_tick)
+                    
+                    for ev in tick_summary.get("events", []):
+                        if ev == "crisis":
+                            await send_crisis_alert({"severity": "critical", "title": "Экономический кризис!", "description": f"Тик {self.current_tick}"})
+                except Exception:
+                    pass
+            
+            asyncio.create_task(_notify())
+        except Exception:
+            pass
+
 
             
             logger.info(f"Tick {self.current_tick}: {tick_summary['transactions']} txns, {tick_summary['bankruptcies']} bankruptcies")
@@ -179,7 +185,10 @@ class SimulationEngine:
     
     async def _update_markets(self, session: AsyncSession):
         """Обновить рыночные цены на основе supply/demand."""
-        result = await session.execute(select(Market))
+        # Загружаем только рынки предыдущего тика
+        result = await session.execute(
+            select(Market).where(Market.tick == self.current_tick - 1)
+        )
         markets = result.scalars().all()
         
         for market in markets:
@@ -382,19 +391,18 @@ class SimulationEngine:
         # ============================================
         if self._ai_budget_remaining > 0:
             try:
+                import asyncio as _asyncio
                 from app.engine.ai_service import get_agent_decision
                 from app.engine.telegram_notifier import send_crisis_alert, send_bankruptcy_milestone
                 
-                # Выбираем агентов для AI-решений (не более 5 за тик)
-                ai_candidates = random.sample(agents, min(5, len(agents)))
+                # Выбираем агентов для AI-решений (не более 3 за тик)
+                ai_candidates = random.sample(agents, min(3, len(agents)))
                 
                 # Формируем снапшот рынка
                 market_snapshot = {"tick": self.current_tick}
                 
-                for agent in ai_candidates:
-                    if self._ai_budget_remaining <= 0:
-                        break
-                    
+                # Параллельные AI-запросы с общим таймаутом 15 сек
+                async def _get_ai_txn(agent):
                     task_type = {
                         "worker": "quick",
                         "entrepreneur": "strategy",
@@ -403,15 +411,23 @@ class SimulationEngine:
                         "government": "strategy",
                         "researcher": "research",
                     }.get(agent.role, "quick")
-                    
                     decision = await get_agent_decision(agent, market_snapshot, task_type)
-                    
                     if decision:
-                        txn = self._ai_decision_to_transaction(agent, decision)
-                        if txn:
-                            transactions.append(txn)
-                    
-                    self._ai_budget_remaining -= 1
+                        return self._ai_decision_to_transaction(agent, decision)
+                    return None
+                
+                try:
+                    results = await _asyncio.wait_for(
+                        _asyncio.gather(*[_get_ai_txn(a) for a in ai_candidates], return_exceptions=True),
+                        timeout=15.0
+                    )
+                    for r in results:
+                        if isinstance(r, dict) and r:
+                            transactions.append(r)
+                except _asyncio.TimeoutError:
+                    pass  # AI timeout — proceed with heuristics
+                
+                self._ai_budget_remaining -= 1
                     
             except Exception as e:
                 logger.warning(f"AI service batch error: {e}")
