@@ -295,24 +295,34 @@ interface WealthBucket { range: string; count: number; total_capital: number; av
 // ============================================================
 function InfoTip({ text }: { text: string }) {
   const [show, setShow] = useState(false)
+  if (!show) {
+    return (
+      <span className="inline-flex ml-1">
+        <button
+          onClick={() => setShow(true)}
+          className="text-gray-500 hover:text-blue-400 transition-colors"
+        >
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
+      </span>
+    )
+  }
   return (
-    <span className="relative inline-flex ml-1">
-      <button
-        onMouseEnter={() => setShow(true)}
-        onMouseLeave={() => setShow(false)}
-        onClick={() => setShow(!show)}
-        className="text-gray-500 hover:text-blue-400 transition-colors"
-      >
-        <HelpCircle className="w-3.5 h-3.5" />
-      </button>
-      {show && (
-        <div className="fixed inset-0 z-[9999]" onClick={() => setShow(false)}>
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-5 py-3 text-[13px] leading-relaxed bg-[#1e2040] border border-blue-500/30 rounded-xl shadow-2xl max-w-sm text-gray-200 text-center z-[10000]">
-            {text}
-          </div>
+    <>
+      <span className="inline-flex ml-1">
+        <button onClick={() => setShow(false)} className="text-blue-400 transition-colors">
+          <HelpCircle className="w-3.5 h-3.5" />
+        </button>
+      </span>
+      <div className="fixed inset-0 bg-black/40 z-[9998]" onClick={() => setShow(false)} />
+      <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[9999] bg-[#1e2040] border border-blue-500/30 rounded-2xl shadow-2xl max-w-md w-[90%] p-5">
+        <div className="flex items-center justify-between mb-3">
+          <span className="text-blue-400 font-medium text-sm">ℹ️ Описание показателя</span>
+          <button onClick={() => setShow(false)} className="text-gray-500 hover:text-white text-lg leading-none">&times;</button>
         </div>
-      )}
-    </span>
+        <p className="text-[14px] leading-relaxed text-gray-200">{text}</p>
+      </div>
+    </>
   )
 }
 

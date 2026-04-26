@@ -138,6 +138,42 @@ class SimulationEngine:
             
             await session.commit()
             
+            # 8. Telegram уведомления
+            try:
+                from app.engine.telegram_notifier import send_tick_report, send_crisis_alert, send_bankruptcy_milestone
+                
+                # Сводка каждые 5 тиков
+                status_data = {
+                    "active_agents": await session.scalar(select(func.count(Agent.id)).where(Agent.status == "active")),
+                    "bankrupt_agents": await session.scalar(select(func.count(Agent.id)).where(Agent.status == "bankrupt")),
+                    "transactions": tick_summary["transactions"],
+                    "events": tick_summary["events"],
+                }
+                
+                # Последний макро-показатель
+                macro_result = await session.execute(
+                    select(MacroIndicator).where(MacroIndicator.tick == self.current_tick)
+                )
+                macro_data = macro_result.scalar_one_or_none()
+                
+                if macro_data:
+                    await send_tick_report(self.current_tick, status_data, {
+                        "gdp": macro_data.gdp,
+                        "gini_coefficient": macro_data.gini_coefficient,
+                    })
+                
+                # Алерты на банкротства
+                if status_data["bankrupt_agents"]:
+                    await send_bankruptcy_milestone(status_data["bankrupt_agents"], self.current_tick)
+                
+                # Алерты на кризисы
+                for ev in events:
+                    if ev == "crisis":
+                        await send_crisis_alert({"severity": "critical", "title": "Экономический кризис!", "description": f"Тик {self.current_tick}"})
+            except Exception as e:
+                logger.debug(f"Telegram notify error: {e}
+
+            
             logger.info(f"Tick {self.current_tick}: {tick_summary['transactions']} txns, {tick_summary['bankruptcies']} bankruptcies")
             return tick_summary
     
@@ -347,6 +383,7 @@ class SimulationEngine:
         if self._ai_budget_remaining > 0:
             try:
                 from app.engine.ai_service import get_agent_decision
+                from app.engine.telegram_notifier import send_crisis_alert, send_bankruptcy_milestone
                 
                 # Выбираем агентов для AI-решений (не более 5 за тик)
                 ai_candidates = random.sample(agents, min(5, len(agents)))
