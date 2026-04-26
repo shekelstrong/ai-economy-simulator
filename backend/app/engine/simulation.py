@@ -169,109 +169,254 @@ class SimulationEngine:
             session.add(market_new)
     
     async def _process_agent_decisions(self, session: AsyncSession) -> List[Dict]:
-        """Агенты принимают решения. Возвращает список транзакций."""
+        """Агенты принимают решения — замкнутая экономика + AI."""
         result = await session.execute(
             select(Agent).where(Agent.status == "active")
         )
         agents = result.scalars().all()
         
+        if not agents:
+            return []
+        
         transactions = []
         
-        # Группируем агентов по ролям для батчевой AI-обработки
-        batches = []
-        current_batch = []
+        # Строим индексы для замкнутой экономики
+        workers = [a for a in agents if a.role == "worker"]
+        entrepreneurs = [a for a in agents if a.role == "entrepreneur"]
+        investors = [a for a in agents if a.role == "investor"]
+        bankers = [a for a in agents if a.role == "banker"]
+        governments = [a for a in agents if a.role == "government"]
+        researchers = [a for a in agents if a.role == "researcher"]
         
-        for agent in agents:
-            current_batch.append(agent)
-            if len(current_batch) >= settings.AI_BATCH_SIZE:
-                batches.append(current_batch)
-                current_batch = []
-        if current_batch:
-            batches.append(current_batch)
+        # ============================================
+        # 1. RABOCHIE → получают ЗП от предпринимателей
+        # ============================================
+        random.shuffle(workers)
+        for i, worker in enumerate(workers):
+            employer = entrepreneurs[i % len(entrepreneurs)] if entrepreneurs else None
+            salary = random.uniform(1000, 5000) * (1 + worker.intelligence)
+            
+            if employer and employer.capital > salary:
+                # ЗП из кармана предпринимателя
+                transactions.append({
+                    "type": "salary",
+                    "from": employer.id,
+                    "to": worker.id,
+                    "amount": salary,
+                    "description": "Зарплата",
+                })
+            elif employer:
+                # У работодателя нет денег — сокращённая ЗП
+                salary = employer.capital * 0.3
+                if salary > 100:
+                    transactions.append({
+                        "type": "salary",
+                        "from": employer.id,
+                        "to": worker.id,
+                        "amount": salary,
+                        "description": "Зарплата (сокращённая)",
+                    })
+            
+            # Рабочий тратит на потребление
+            spend = random.uniform(500, 3000) * (1 + worker.greediness)
+            if worker.capital > spend:
+                # Деньги идут к случайному предпринимателю
+                seller = random.choice(entrepreneurs) if entrepreneurs else None
+                transactions.append({
+                    "type": "consumption",
+                    "from": worker.id,
+                    "to": seller.id if seller else None,
+                    "amount": spend,
+                    "description": "Покупка товаров",
+                })
         
-        # Обрабатываем батчи
-        for batch in batches:
-            if self._ai_budget_remaining <= 0:
-                # Лимит AI исчерпан — используем эвристику
-                for agent in batch:
-                    txn = self._heuristic_decision(agent)
-                    if txn:
-                        transactions.append(txn)
-            else:
-                # AI обработка (пока заглушка — будет реализовано в ai_service)
-                for agent in batch:
-                    txn = self._heuristic_decision(agent)
-                    if txn:
-                        transactions.append(txn)
-                self._ai_budget_remaining -= 1
+        # ============================================
+        # 2. PREDPRINIMATELI — производят и продают
+        # ============================================
+        for ent in entrepreneurs:
+            # Нанимают рабочих (ЗП уже обработана выше)
+            # Производят товары — затраты на производство
+            if ent.capital > 5000:
+                cost = ent.capital * 0.05 * ent.innovation
+                transactions.append({
+                    "type": "production",
+                    "from": ent.id,
+                    "to": None,  # На счёт компании
+                    "amount": cost,
+                    "description": "Затраты на производство",
+                })
+            
+            # Выручка от продаж (от потребителей — уже обработано)
+            # Дополнительная выручка от внешних продаж
+            revenue = random.uniform(1000, 8000) * (1 + ent.intelligence)
+            transactions.append({
+                "type": "trade",
+                "from": None,  # Синтетическая выручка
+                "to": ent.id,
+                "amount": revenue,
+                "description": "Выручка от продаж",
+            })
+        
+        # ============================================
+        # 3. INVESTORY — инвестируют и получают ROI
+        # ============================================
+        for inv in investors:
+            # Инвестиция — деньги на рынок
+            if inv.capital > 20000 and random.random() < inv.risk_tolerance:
+                invest_amount = inv.capital * inv.risk_tolerance * 0.15
+                # Выбираем сектор
+                sector = random.choice(settings.SECTORS) if inv.sector is None else inv.sector
+                transactions.append({
+                    "type": "investment",
+                    "from": inv.id,
+                    "to": None,  # На рынок
+                    "amount": invest_amount,
+                    "description": f"Инвестиция в {sector}",
+                })
+            
+            # Получают дивиденды/ROI (ЗАКРЫТЫЙ ЦИКЛ!)
+            if inv.income > 0 or inv.capital > 10000:
+                # ROI зависит от успешности предыдущих инвестиций
+                roi_rate = random.uniform(-0.05, 0.20) * (1 + inv.intelligence)  # от -5% до +20%
+                roi_amount = inv.capital * 0.1 * max(roi_rate, 0)
+                if roi_amount > 100:
+                    transactions.append({
+                        "type": "dividend",
+                        "from": None,  # С рынка
+                        "to": inv.id,
+                        "amount": roi_amount,
+                        "description": "Дивиденды от инвестиций",
+                    })
+        
+        # ============================================
+        # 4. BANKIRY — кредитуют
+        # ============================================
+        for bank in bankers:
+            if bank.capital > 50000 and random.random() < 0.3:
+                loan_amount = bank.capital * 0.15
+                # Кредит random агенту
+                borrower = random.choice([a for a in agents if a.role in ("entrepreneur", "worker") and a.capital < 50000])
+                if borrower:
+                    rate = random.uniform(0.05, 0.15)  # 5-15% годовых
+                    transactions.append({
+                        "type": "loan",
+                        "from": bank.id,
+                        "to": borrower.id,
+                        "amount": loan_amount,
+                        "description": f"Кредит под {rate*100:.0f}%",
+                    })
+        
+        # ============================================
+        # 5. GOSSUZHIASHCHIE — собирают налоги (уже в _process_salaries_taxes)
+        # ============================================
+        for gov in governments:
+            # Госинвестиции в экономику
+            if gov.capital > 100000:
+                subsidy = gov.capital * 0.02
+                target = random.choice(entrepreneurs) if entrepreneurs else None
+                if target:
+                    transactions.append({
+                        "type": "subsidy",
+                        "from": gov.id,
+                        "to": target.id,
+                        "amount": subsidy,
+                        "description": "Гос. субсидия бизнесу",
+                    })
+        
+        # ============================================
+        # 6. ISSLEDOVATELI — инновации
+        # ============================================
+        for res in researchers:
+            if random.random() < res.innovation * 0.3:
+                sector = random.choice(settings.SECTORS)
+                transactions.append({
+                    "type": "innovation",
+                    "from": res.id,
+                    "to": None,
+                    "amount": res.capital * 0.02,
+                    "description": f"Исследование в {sector}",
+                })
+        
+        # ============================================
+        # 7. AI-УСИЛЕНИЕ — заменяем часть решений на LLM
+        # ============================================
+        if self._ai_budget_remaining > 0:
+            try:
+                from app.engine.ai_service import get_agent_decision
+                
+                # Выбираем агентов для AI-решений (не более 5 за тик)
+                ai_candidates = random.sample(agents, min(5, len(agents)))
+                
+                # Формируем снапшот рынка
+                market_snapshot = {"tick": self.current_tick}
+                
+                for agent in ai_candidates:
+                    if self._ai_budget_remaining <= 0:
+                        break
+                    
+                    task_type = {
+                        "worker": "quick",
+                        "entrepreneur": "strategy",
+                        "investor": "trade",
+                        "banker": "reasoning",
+                        "government": "strategy",
+                        "researcher": "research",
+                    }.get(agent.role, "quick")
+                    
+                    decision = await get_agent_decision(agent, market_snapshot, task_type)
+                    
+                    if decision:
+                        txn = self._ai_decision_to_transaction(agent, decision)
+                        if txn:
+                            transactions.append(txn)
+                    
+                    self._ai_budget_remaining -= 1
+                    
+            except Exception as e:
+                logger.warning(f"AI service batch error: {e}")
         
         return transactions
     
-    def _heuristic_decision(self, agent: Agent) -> Optional[Dict]:
-        """Эвристическое решение агента (без AI)."""
-        r = random.random()
+    def _ai_decision_to_transaction(self, agent: Agent, decision: Dict) -> Optional[Dict]:
+        """Конвертировать AI-решение в транзакцию."""
+        action = decision.get("action")
+        amount = decision.get("amount", 0)
+        sector = decision.get("sector", agent.sector)
         
-        if agent.role == "worker":
-            # Работник: заработать → потратить
-            if r < 0.3:
-                return {
-                    "type": "salary",
-                    "from": None,  # От "государства"/компании
-                    "to": agent.id,
-                    "amount": random.uniform(1000, 5000) * (1 + agent.intelligence),
-                    "description": "Зарплата",
-                }
-            elif r < 0.8:
-                return {
-                    "type": "consumption",
-                    "from": agent.id,
-                    "to": None,
-                    "amount": random.uniform(500, 3000) * (1 + agent.greediness),
-                    "description": "Покупка товаров",
-                }
+        if not action or not isinstance(amount, (int, float)) or amount <= 0:
+            return None
         
-        elif agent.role == "entrepreneur":
-            # Предприниматель: инвестировать → получить прибыль
-            if r < 0.4 and agent.capital > 10000:
-                return {
-                    "type": "investment",
-                    "from": agent.id,
-                    "to": None,
-                    "amount": agent.capital * agent.risk_tolerance * 0.1,
-                    "description": "Инвестиция в бизнес",
-                }
-            elif r < 0.7:
-                return {
-                    "type": "trade",
-                    "from": None,
-                    "to": agent.id,
-                    "amount": random.uniform(2000, 10000) * agent.intelligence,
-                    "description": "Выручка от продаж",
-                }
+        # Проверяем что агент может себе это позволить
+        if action in ("spend", "invest", "lend", "hire", "production", "innovation"):
+            if agent.capital < amount:
+                amount = agent.capital * 0.5  # Тратит что есть
+            if amount < 100:
+                return None
         
-        elif agent.role == "investor":
-            # Инвестор: купить/продать активы
-            if r < 0.5 and agent.capital > 20000:
-                return {
-                    "type": "investment",
-                    "from": agent.id,
-                    "to": None,
-                    "amount": agent.capital * agent.risk_tolerance * 0.2,
-                    "description": "Покупка акций/активов",
-                }
+        mapping = {
+            "earn": {"type": "salary", "from": None, "to": agent.id, "desc": "Доход"},
+            "spend": {"type": "consumption", "from": agent.id, "to": None, "desc": "Покупка"},
+            "invest": {"type": "investment", "from": agent.id, "to": None, "desc": f"Инвестиция в {sector}"},
+            "dividend": {"type": "dividend", "from": None, "to": agent.id, "desc": "Дивиденды"},
+            "lend": {"type": "loan", "from": agent.id, "to": None, "desc": "Кредит"},
+            "borrow": {"type": "loan", "from": None, "to": agent.id, "desc": "Заём"},
+            "hire": {"type": "salary", "from": agent.id, "to": None, "desc": "Зарплата сотрудникам"},
+            "produce": {"type": "production", "from": agent.id, "to": None, "desc": f"Производство {sector}"},
+            "innovate": {"type": "innovation", "from": agent.id, "to": None, "desc": f"Исследование {sector}"},
+            "subsidy": {"type": "subsidy", "from": agent.id, "to": None, "desc": f"Субсидия {sector}"},
+        }
         
-        elif agent.role == "banker":
-            # Банкир: выдать кредит
-            if r < 0.3 and agent.capital > 50000:
-                return {
-                    "type": "loan",
-                    "from": agent.id,
-                    "to": None,
-                    "amount": agent.capital * 0.1,
-                    "description": "Выдача кредита",
-                }
+        tpl = mapping.get(action)
+        if not tpl:
+            return None
         
-        return None
+        return {
+            "type": tpl["type"],
+            "from": tpl["from"],
+            "to": tpl["to"],
+            "amount": amount,
+            "description": tpl["desc"],
+        }
     
     async def _execute_transactions(self, session: AsyncSession, transactions: List[Dict]):
         """Исполнить транзакции батчем — один запрос к БД вместо N+1."""
