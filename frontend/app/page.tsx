@@ -501,17 +501,42 @@ export default function Dashboard() {
               </div>
 
               <div className="card">
-                <h3 className="font-semibold text-sm mb-3">{t.wealthDistribution}</h3>
+                <h3 className="font-semibold text-sm mb-3 flex items-center">
+                  {t.wealthDistribution}
+                  <InfoTip text={t.tooltip_wealthGap} />
+                </h3>
                 {wealth && wealth.buckets.length > 0 ? (
-                  <ResponsiveContainer width="100%" height={260}>
-                    <PieChart>
-                      <Pie data={wealth.buckets} dataKey="share_of_total" nameKey="range" cx="50%" cy="50%" outerRadius={90}
-                        label={({ range, share_of_total }) => `${range}: ${share_of_total.toFixed(1)}%`} labelLine={{ stroke: '#4a4a6a' }}>
-                        {wealth.buckets.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#12121a', border: '1px solid #1e1e2e', borderRadius: 8, fontSize: 12 }} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  <div className="space-y-1.5">
+                    {wealth.buckets.map((b, i) => (
+                      <div key={i} 
+                        className="group flex items-center gap-2 py-1.5 px-2 rounded-lg hover:bg-[#1a1a2e] cursor-pointer transition-all"
+                        onClick={() => setDetailModal(`${t.wealthDistribution}: ${b.range}`)}
+                      >
+                        {/* Цветной индикатор */}
+                        <span className="w-3 h-3 rounded-sm flex-shrink-0" style={{ backgroundColor: COLORS[i % COLORS.length] }} />
+                        
+                        {/* Диапазон */}
+                        <span className="text-xs text-gray-400 w-16 flex-shrink-0">{b.range}</span>
+                        
+                        {/* Полоска прогресса */}
+                        <div className="flex-1 h-5 bg-[#0a0a0f] rounded overflow-hidden relative">
+                          <div 
+                            className="h-full rounded transition-all duration-500" 
+                            style={{ width: `${Math.max(b.share_of_total, 1)}%`, backgroundColor: COLORS[i % COLORS.length], opacity: 0.7 }}
+                          />
+                          <span className="absolute inset-0 flex items-center justify-center text-[10px] font-medium text-white mix-blend-difference">
+                            {b.share_of_total.toFixed(1)}%
+                          </span>
+                        </div>
+                        
+                        {/* Детали */}
+                        <div className="text-right flex-shrink-0 w-24">
+                          <div className="text-[10px] text-gray-500">{b.count} {t.count}</div>
+                          <div className="text-[10px] text-gray-400">₽{fmt(b.avg_capital)}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <div className="h-[260px] flex items-center justify-center text-gray-500 text-sm">{t.noData}</div>
                 )}
