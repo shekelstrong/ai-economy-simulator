@@ -30,8 +30,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://economy:economy@db:5432/economy
       REDIS_URL: redis://redis:6379/0
-      TELEGRAM_BOT_TOKEN: "REDACTED_TELEGRAM_TOKEN"
-      TELEGRAM_CHAT_ID: "REDACTED"
     depends_on:
       db:
         condition: service_healthy
