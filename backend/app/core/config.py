@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     
     # === СИМУЛЯЦИЯ ===
     TICK_INTERVAL_SECONDS: int = 60  # Тик каждые 60 секунд
-    INITIAL_AGENTS: int = 1000
+    INITIAL_AGENTS: int = 500
     INITIAL_CAPITAL: float = 100000.0  # ₽ на старте каждому
     
     # === ЭКОНОМИКА ===

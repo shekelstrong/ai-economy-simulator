@@ -15,12 +15,12 @@ from loguru import logger
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
-# Free/cheap models that handle batch JSON well
-PRIMARY_MODEL = "deepseek/deepseek-v4-flash"
-FALLBACK_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+# Free models that handle batch JSON well
+PRIMARY_MODEL = "nvidia/nemotron-3-nano-30b-a3b:free"
+FALLBACK_MODEL = "deepseek/deepseek-v4-flash"
 
-BATCH_SIZE = 50  # agents per API call
-MAX_CONCURRENT = 5  # parallel API calls
+BATCH_SIZE = 10  # agents per API call
+MAX_CONCURRENT = 2  # parallel API calls (nemotron rate limit)
 
 BATCH_SYSTEM_PROMPT = """You are an economic simulation engine. You receive a batch of agents and must return a JSON array of decisions.
 
@@ -113,7 +113,7 @@ async def _call_llm(
                 {"role": "user", "content": prompt},
             ],
             "temperature": 0.7,
-            "max_tokens": 4000,
+            "max_tokens": 2000,
         },
     )
     
@@ -125,8 +125,10 @@ async def _call_llm(
     content = data.get("choices", [{}])[0].get("message", {}).get("content")
     
     if not content or not isinstance(content, str):
+        logger.debug(f"LLM {model} returned empty content")
         return None
     
+    logger.info(f"LLM {model} OK: {len(content)} chars")
     return content.strip()
 
 
@@ -232,6 +234,9 @@ async def get_all_agent_decisions(
     
     async def _process_batch(batch_idx: int, batch: List[Any]):
         async with semaphore:
+            # Rate limit: задержка между батчами
+            if batch_idx > 0:
+                await asyncio.sleep(2.0 * (batch_idx % MAX_CONCURRENT))
             try:
                 batch_decisions = await get_batch_decisions(batch, market_snapshot)
                 for local_idx, decision in batch_decisions.items():

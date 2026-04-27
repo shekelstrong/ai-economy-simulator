@@ -216,7 +216,7 @@ class SimulationEngine:
             session.add(market_new)
     
     async def _process_agent_decisions(self, session: AsyncSession) -> List[Dict]:
-        """ВСЕ агенты думают через LLM. Batch 50 агентов → 1 API call."""
+        """Гибрид: ключевые роли через LLM, рабочие на эвристике."""
         result = await session.execute(
             select(Agent).where(Agent.status == "active")
         )
@@ -225,64 +225,103 @@ class SimulationEngine:
         if not agents:
             return []
         
-        # Строим индексы для замкнутой экономики
+        # Разделяем: ключевые роли → LLM, рабочие → эвристика
+        strategic_agents = [a for a in agents if a.role in ("entrepreneur", "investor", "banker", "government", "researcher")]
+        workers = [a for a in agents if a.role == "worker"]
         entrepreneurs = [a for a in agents if a.role == "entrepreneur"]
         ent_ids = {e.id: e for e in entrepreneurs}
         
-        # Формируем снапшот рынка для LLM
-        market_snapshot = {
-            "tick": self.current_tick,
-            "active_agents": len(agents),
-            "gini": 0,  # обновим ниже если есть
-            "gdp": 0,
-            "avg_income": 0,
-        }
-        
-        # Берём последний макро-показатель
-        try:
-            macro_result = await session.execute(
-                select(MacroIndicator).order_by(MacroIndicator.tick.desc()).limit(1)
-            )
-            macro = macro_result.scalar_one_or_none()
-            if macro:
-                market_snapshot["gini"] = macro.gini_coefficient
-                market_snapshot["gdp"] = macro.gdp
-                market_snapshot["avg_income"] = macro.avg_income
-        except Exception:
-            pass
-        
-        # ============================================
-        # LLM BATCH — все 1000 агентов через AI
-        # ============================================
         transactions = []
         
-        try:
-            from app.engine.ai_service import get_all_agent_decisions
+        # ============================================
+        # 1. СТРАТЕГИЧЕСКИЕ АГЕНТЫ → LLM BATCH
+        # ============================================
+        if strategic_agents:
+            market_snapshot = {
+                "tick": self.current_tick,
+                "active_agents": len(agents),
+                "workers": len(workers),
+                "entrepreneurs": len(entrepreneurs),
+                "gini": 0,
+                "gdp": 0,
+                "avg_income": 0,
+            }
             
-            ai_decisions = await asyncio.wait_for(
-                get_all_agent_decisions(agents, market_snapshot),
-                timeout=45.0  # 45 сек на все батчи
-            )
+            try:
+                macro_result = await session.execute(
+                    select(MacroIndicator).order_by(MacroIndicator.tick.desc()).limit(1)
+                )
+                macro = macro_result.scalar_one_or_none()
+                if macro:
+                    market_snapshot["gini"] = macro.gini_coefficient
+                    market_snapshot["gdp"] = macro.gdp
+                    market_snapshot["avg_income"] = macro.avg_income
+            except Exception:
+                pass
             
-            # Конвертируем AI-решения в транзакции
-            for agent in agents:
-                decision = ai_decisions.get(agent.id)
-                if not decision or decision.get("action") == "save":
-                    continue
+            try:
+                from app.engine.ai_service import get_all_agent_decisions
                 
-                txn = self._llm_decision_to_txn(agent, decision, ent_ids)
-                if txn:
-                    transactions.append(txn)
+                ai_decisions = await asyncio.wait_for(
+                    get_all_agent_decisions(strategic_agents, market_snapshot),
+                    timeout=50.0
+                )
+                
+                for agent in strategic_agents:
+                    decision = ai_decisions.get(agent.id)
+                    if not decision or decision.get("action") == "save":
+                        continue
+                    txn = self._llm_decision_to_txn(agent, decision, ent_ids)
+                    if txn:
+                        transactions.append(txn)
+                
+                decided = len([d for d in ai_decisions.values() if d.get("action") != "save"])
+                logger.info(f"LLM: {decided}/{len(strategic_agents)} strategic agents decided, {len(transactions)} txns")
+                
+            except asyncio.TimeoutError:
+                logger.warning("LLM timeout for strategic agents")
+            except Exception as e:
+                logger.warning(f"LLM error: {e}")
+        
+        # ============================================
+        # 2. РАБОЧИЕ → умная эвристика (замкнутый цикл)
+        # ============================================
+        random.shuffle(workers)
+        for i, worker in enumerate(workers):
+            employer = entrepreneurs[i % len(entrepreneurs)] if entrepreneurs else None
+            salary = random.uniform(1000, 5000) * (1 + worker.intelligence)
             
-            logger.info(f"LLM: {len(ai_decisions)}/{len(agents)} agents decided, {len(transactions)} txns")
+            if employer and employer.capital > salary:
+                transactions.append({
+                    "type": "salary", "from": employer.id, "to": worker.id,
+                    "amount": salary, "description": "Зарплата",
+                })
+            elif employer:
+                salary = max(employer.capital * 0.3, 0)
+                if salary > 100:
+                    transactions.append({
+                        "type": "salary", "from": employer.id, "to": worker.id,
+                        "amount": salary, "description": "Зарплата (сокращённая)",
+                    })
             
-        except asyncio.TimeoutError:
-            logger.warning("LLM timeout — falling back to heuristics")
-            # Fallback: замкнутая эвристика
-            transactions = self._heuristic_fallback(agents, entrepreneurs)
-        except Exception as e:
-            logger.warning(f"LLM error: {e} — falling back to heuristics")
-            transactions = self._heuristic_fallback(agents, entrepreneurs)
+            spend = random.uniform(2000, 6000) * (1 + worker.greediness)
+            if worker.capital > spend and entrepreneurs:
+                seller = random.choice(entrepreneurs)
+                transactions.append({
+                    "type": "consumption", "from": worker.id, "to": seller.id,
+                    "amount": spend, "description": "Покупка товаров",
+                })
+        
+        # Предприниматели получают выручку пропорционально продажам
+        # (компенсация за ЗП + прибыль от бизнеса)
+        for ent in entrepreneurs:
+            if ent.status == "active":
+                revenue = len(workers) * random.uniform(10, 30)  # ~5000-15000 за тик
+                transactions.append({
+                    "type": "trade", "from": None, "to": ent.id,
+                    "amount": revenue,
+                    "description": "Выручка от продаж",
+                })
         
         return transactions
     
