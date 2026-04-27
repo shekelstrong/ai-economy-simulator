@@ -1,5 +1,17 @@
 # 🏛 AI Economy Simulator
 
+<div align="center">
+
+[![GitHub stars](https://img.shields.io/github/stars/shekelstrong/ai-economy-simulator?style=for-the-badge&color=yellow)](https://github.com/shekelstrong/ai-economy-simulator/stargazers)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=for-the-badge)](https://github.com/shekelstrong/ai-economy-simulator/blob/main/LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://github.com/shekelstrong/ai-economy-simulator#quick-start)
+[![GitHub Release](https://img.shields.io/github/v/release/shekelstrong/ai-economy-simulator?style=for-the-badge&color=green)](https://github.com/shekelstrong/ai-economy-simulator/releases)
+[![Discussions](https://img.shields.io/github/discussions/shekelstrong/ai-economy-simulator?style=for-the-badge&color=58A6FF)](https://github.com/shekelstrong/ai-economy-simulator/discussions)
+
+</div>
+
+
+
 **ИИ-симулятор экономики** — 1000 автономных ИИ-агентов моделируют экономику в реальном времени. Никакого сценария — агенты сами принимают решения, торгуют, создают институты и обучаются.
 
 ---
