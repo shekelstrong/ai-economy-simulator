@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     
     # === БАЗА ДАННЫХ ===
-    DATABASE_URL: str = "postgresql+asyncpg://economy:economy@localhost:5432/economy"
+    DATABASE_URL: str = ""  # Must be set via .env — postgresql+asyncpg://user:pass@host:port/db
     REDIS_URL: str = "redis://localhost:6379/0"
     
     # === СИМУЛЯЦИЯ ===

@@ -2,13 +2,13 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_USER: economy
-      POSTGRES_PASSWORD: economy
-      POSTGRES_DB: economy
+      POSTGRES_USER: ${POSTGRES_USER:-economy}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-economy}
+      POSTGRES_DB: ${POSTGRES_DB:-economy}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U economy"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-economy}"]
       interval: 3s
       timeout: 3s
       retries: 10
@@ -28,7 +28,7 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://economy:economy@db:5432/economy
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://economy:economy@db:5432/economy}
       REDIS_URL: redis://redis:6379/0
     depends_on:
       db:
